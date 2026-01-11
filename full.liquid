@@ -100,12 +100,11 @@ Assumes `data` is already in chronological order. If it's not, you must sort ups
   ]
 {% endcapture %}
 
-{% assign trend = last.value | minus: previous_level %}
-{% assign date_yesterday = data[count - daily_count -1].timestamp %}
+{% assign trend = latest.value | minus: previous_level %}
 {% if trend < 0 %}
-  {% assign trend_icon = "&#11018"%}
+  {% assign trend_icon = "&#11018;" %}
 {% else %}
-  {% assign trend_icon = "&#11016"%}
+  {% assign trend_icon = "&#11016;" %}
 {% endif%}
 
 {% assign start_date_s = first.timestamp | l_date: "%s" %}
