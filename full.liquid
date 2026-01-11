@@ -1,0 +1,218 @@
+{% assign chart_id = "series-chart-" | append_random %}
+
+{%- comment -%}
+Assumptions:
+- The polling response is a root array, so TRMNL exposes it as `data`
+- Each element is { "timestamp": "...", "value": 306.0 }
+{%- endcomment -%}
+
+{% assign count = data | size %}
+{% assign first = data[0] %}
+{% assign latest = data | last %}
+
+{%- comment -%} Compute min/max (numeric-safe) {%- endcomment -%}
+{% assign min_val = nil %}
+{% assign min_val_date = nil %}
+{% assign max_val = nil %}
+{% assign max_val_date = nil %}
+
+{% for r in data %}
+  {% assign v = r.value | plus: 0 %}
+  {% if min_val == nil or v < min_val %}
+    {% assign min_val = v %}
+    {% assign min_val_date = r.timestamp | l_date: "%d.%m.%Y" %}
+  {% endif %}
+  {% if max_val == nil or v > max_val %}
+    {% assign max_val = v %}
+    {% assign max_val_date = r.timestamp | l_date: "%d.%m.%Y" %}
+  {% endif %}
+{% endfor %}
+
+{% assign delta = latest.value | minus: first.value %}
+  
+{%- comment -%}
+Build daily series from intraday data (keep LAST measurement per day).
+Assumes `data` is already in chronological order. If it's not, you must sort upstream.
+{%- endcomment -%}
+
+{% assign daily_count = 0 %}
+
+{% capture categories_json %}
+[
+{% for r in data %}
+  {% assign day = r.timestamp | l_date: "%d.%m.%y" %}
+  {% assign next_index = forloop.index0 | plus: 1 %}
+
+  {%- comment -%}
+  Decide whether current row is the last row of its day:
+  - It's the last element overall, OR
+  - Next element's day differs
+  {%- endcomment -%}
+
+  {% if forloop.last %}
+    {% assign is_last_of_day = true %}
+  {% else %}
+    {% assign next_r = data[next_index] %}
+    {% assign next_day = next_r.timestamp | l_date: "%d.%m.%y" %}
+    {% if next_day != day %}
+      {% assign is_last_of_day = true %}
+    {% else %}
+      {% assign is_last_of_day = false %}
+    {% endif %}
+  {% endif %}
+
+  {% if is_last_of_day %}
+    {% if daily_count > 0 %},{% endif %}
+    "{{ day }}"
+    {% assign daily_count = daily_count | plus: 1 %}
+  {% endif %}
+{% endfor %}
+]
+{% endcapture %}
+
+{% assign daily_count = 0 %}
+
+{% capture values_json %}
+  [
+  {% for r in data %}
+    {% assign day = r.timestamp | l_date: "%d.%m.%y" %}
+    {% assign next_index = forloop.index0 | plus: 1 %}
+
+    {% if forloop.last %}
+      {% assign is_last_of_day = true %}
+    {% else %}
+      {% assign next_r = data[next_index] %}
+      {% assign next_day = next_r.timestamp | l_date: "%d.%m.%y" %}
+      {% if next_day != day %}
+        {% assign is_last_of_day = true %}
+        {% assign previous_level = r.value %}
+      {% else %}
+        {% assign is_last_of_day = false %}
+      {% endif %}
+    {% endif %}
+
+    {% if is_last_of_day %}
+      {% if daily_count > 0 %},{% endif %}
+      {{ r.value | plus: 0 }}
+      {% assign daily_count = daily_count | plus: 1 %}
+    {% endif %}
+  {% endfor %}
+  ]
+{% endcapture %}
+
+{% assign trend = last.value | minus: previous_level %}
+{% assign date_yesterday = data[count - daily_count -1].timestamp %}
+{% if trend < 0 %}
+  {% assign trend_icon = "&#11018"%}
+{% else %}
+  {% assign trend_icon = "&#11016"%}
+{% endif%}
+
+{% assign start_date_s = first.timestamp | l_date: "%s" %}
+{% assign end_date_s = latest.timestamp | l_date: "%s" %}
+
+  <div class="layout layout--col gap--space-between">
+    <div class="grid">
+      <div class="row">
+        <div class="grid">
+          <div class="item col--span-2">
+            <div class="meta"></div>
+            <div class="content">
+              <span class="value value--large value--tnums" data-value-type="number">{{ latest.value | plus: 0 }}</span>
+              <span class="label">{{ latest.timestamp | l_date: "%d.%m.%Y %H:%M" }}</span>
+            </div>
+          </div>
+
+          <div class="item col--span-1">
+            <div class="meta"></div>
+            <div class="content">
+              <span class="value value--small value--tnums" data-value-type="number">{{ max_val }}</span>
+              <span class="label label">Max {{ max_val_date }}</span>
+              <span class="value value--small value--tnums" data-value-type="number">{{ min_val }}</span>
+              <span class="label">Min {{ min_val_date }}</span>
+            </div>
+          </div>
+
+          <div class="item col--span-1">
+            <div class="meta"></div>
+            <div class="content">
+              <span class="value value--xsmall value--tnums" data-value-type="text">
+                <div class="w--14 h--1.5 mb--2 bg--gray-55" style="border-radius: 20px;"></div>
+                Trend {{ trend_icon }}
+              </span>
+              <span class="label">{{ end_date_s | minus: start_date_s | divided_by: 86400 }} day delta: {{ delta }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="border--h-5 w--full"></div>
+
+    <script src="https://usetrmnl.com/js/highcharts/12.3.0/highcharts.js"></script>
+
+    <div id="{{ chart_id }}" class="w--full" data-highcharts-chart="0" style="overflow: hidden;" >
+    </div>
+
+    <script type="text/javascript">
+      var categories = {{ categories_json }};
+      var values = {{ values_json }};
+
+      Highcharts.chart("{{ chart_id }}", {
+        chart: {
+          type: "line",
+          height: 284,
+          animation: false,
+          spacing: [10, 0, 0, 0]
+        },
+        title: { text: null },
+        legend: { enabled: false },
+        credits: { enabled: false },
+        tooltip: { enabled: false },
+
+        xAxis: {
+          categories: categories,
+          tickLength: 8,
+          lineWidth: 1,
+          labels: {
+            // Reduce label density for long series
+            step: Math.ceil(categories.length / 6),
+            style: { fontSize: "16px" }
+          }
+        },
+
+        yAxis: {
+          title: { text: null },
+          tickAmount: 5,
+          gridLineWidth: 1,
+          lineWidth: 1,
+          labels: { style: { fontSize: "16px" } }
+
+        },
+
+        plotOptions: {
+          series: {
+            animation: false,
+            enableMouseTracking: false,
+            marker: { enabled: false },
+            states: { hover: { enabled: false } },
+            lineWidth: 4,
+            color: "rgba(0,0,0,0.55)",
+            linecap: "round",   // smoother ends
+            linejoin: "round"   // smoother joins
+          }
+        },
+
+        series: [{
+          name: "Value",
+          data: values
+        }]
+      });
+    </script>
+  </div>
+
+  <div class="title_bar">
+    <img class="image" src="https://usetrmnl.com/images/plugins/trmnl--render.svg">
+    <span class="title">{{ trmnl.plugin_settings.instance_name }}</span>
+    <span class="instance">bei Konstanz</span>
+  </div>
