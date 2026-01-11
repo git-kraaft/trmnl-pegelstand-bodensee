@@ -1,0 +1,12 @@
+---
+strategy: polling
+no_screen_padding: 'no'
+dark_mode: 'no'
+static_data: ''
+polling_verb: get
+polling_url: https://pegelonline.wsv.de/webservices/rest-api/v2/stations/aa9179c1-17ef-4c61-a48a-74193fa7bfdf/W/measurements.json
+polling_headers: content-type=application/json
+polling_body: ''
+id: 212677
+name: Pegelstand Bodensee
+refresh_interval: 360
